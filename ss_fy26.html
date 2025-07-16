@@ -19,6 +19,27 @@
             padding: 0;
             margin: 0;
         }
+        
+        /* Custom style for layer control title */
+        .leaflet-control-layers-toggle::before {
+            content: "Map Data";
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(143, 135, 135, 0.0);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+            color: #333;
+            white-space: nowrap;
+            border: 0px solid #ccc;
+        }
+        
+        .leaflet-control-layers {
+            margin-top: 25px !important;
+        }
         </style>
         <title></title>
     </head>
@@ -43,18 +64,128 @@
         var map = L.map('map', {
             zoomControl:false, maxZoom:28, minZoom:1
         }).fitBounds([[48.12805798554058,-118.70215841330169],[51.39968595468328,-114.54843392530032]]);
-	// Add Basemaps	
+        
+        // Add multiple basemap options
         var baseMap_OSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-	var baseMap_Satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{x}/{y}', {
-    	    maxZoom: 19,
-    	    attribution: 'Tiles © Esri'
-	});
+        }).addTo(map);
         
+        var baseMap_Satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+        });
+        
+        var baseMap_Terrain = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            maxZoom: 17,
+            attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
+        });
+        
+        var baseMap_CartoDB = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        });
+        
+        var baseMap_ESRI_Topo = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community'
+        });
+        
+        var baseMap_Stamen_Terrain = L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}{r}.png', {
+            maxZoom: 18,
+            attribution: 'Map tiles by <a href="http://stamen.com">Stamen Design</a>, <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> &mdash; Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        });
+        
+        // Add BC Roads data from BC Data Catalogue
+        var bcRoadsLayer = L.tileLayer.wms('https://openmaps.gov.bc.ca/geo/pub/wms', {
+            layers: 'WHSE_BASEMAPPING.DRA_DGTL_ROAD_ATLAS_MPAR_SP',
+            format: 'image/png',
+            transparent: true,
+            attribution: 'BC Roads &copy; <a href="https://www2.gov.bc.ca/gov/content/data/open-data">Government of BC</a>',
+            opacity: 0.8,
+            version: '1.1.1',
+            crs: L.CRS.EPSG4326
+        });
+        
+        // Add error handling for WMS layers
+        bcRoadsLayer.on('tileerror', function(error, tile) {
+            console.log('BC Roads WMS Error:', error);
+        });
         var hash = new L.Hash(map);
         map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
         var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        
+        // Function to export feature to KML
+        function exportToKML(feature, layerName) {
+            var kmlContent = '<?xml version="1.0" encoding="UTF-8"?>\n';
+            kmlContent += '<kml xmlns="http://www.opengis.net/kml/2.2">\n';
+            kmlContent += '<Document>\n';
+            kmlContent += '<name>' + layerName + '</name>\n';
+            kmlContent += '<Placemark>\n';
+            
+            // Add name from properties
+            var name = feature.properties.Name || feature.properties.BLOCK_FULL_NAME || feature.properties.LICENCE_ID || 'Feature';
+            kmlContent += '<name>' + escapeXml(name) + '</name>\n';
+            
+            // Add description with all properties
+            kmlContent += '<description><![CDATA[\n';
+            kmlContent += '<table border="1">\n';
+            for (var key in feature.properties) {
+                if (feature.properties[key] !== null && feature.properties[key] !== '') {
+                    kmlContent += '<tr><td><b>' + escapeXml(key) + '</b></td><td>' + escapeXml(String(feature.properties[key])) + '</td></tr>\n';
+                }
+            }
+            kmlContent += '</table>\n';
+            kmlContent += ']]></description>\n';
+            
+            // Add geometry
+            if (feature.geometry.type === 'Polygon') {
+                kmlContent += '<Polygon>\n<outerBoundaryIs>\n<LinearRing>\n<coordinates>\n';
+                var coords = feature.geometry.coordinates[0];
+                for (var i = 0; i < coords.length; i++) {
+                    kmlContent += coords[i][0] + ',' + coords[i][1] + ',0 ';
+                }
+                kmlContent += '\n</coordinates>\n</LinearRing>\n</outerBoundaryIs>\n</Polygon>\n';
+            } else if (feature.geometry.type === 'MultiPolygon') {
+                kmlContent += '<MultiGeometry>\n';
+                for (var p = 0; p < feature.geometry.coordinates.length; p++) {
+                    kmlContent += '<Polygon>\n<outerBoundaryIs>\n<LinearRing>\n<coordinates>\n';
+                    var coords = feature.geometry.coordinates[p][0];
+                    for (var i = 0; i < coords.length; i++) {
+                        kmlContent += coords[i][0] + ',' + coords[i][1] + ',0 ';
+                    }
+                    kmlContent += '\n</coordinates>\n</LinearRing>\n</outerBoundaryIs>\n</Polygon>\n';
+                }
+                kmlContent += '</MultiGeometry>\n';
+            }
+            
+            kmlContent += '</Placemark>\n';
+            kmlContent += '</Document>\n';
+            kmlContent += '</kml>';
+            
+            // Create download
+            var blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml' });
+            var url = window.URL.createObjectURL(blob);
+            var link = document.createElement('a');
+            link.href = url;
+            link.download = (name || 'feature') + '.kml';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        }
+        
+        // Function to escape XML characters
+        function escapeXml(text) {
+            if (text === null || text === undefined) return '';
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+        
         // remove popup's row if "visible-with-data"
         function removeEmptyRowsFromPopupContent(content, feature) {
          var tempDiv = document.createElement('div');
@@ -101,6 +232,9 @@
         }
         function pop_TKO_FDU_2022_0(feature, layer) {
             var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2"><button onclick="exportToKML(' + JSON.stringify(feature).replace(/"/g, '&quot;') + ', \'TKO_FDU_2022\')" style="background-color: #4CAF50; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 10px;"><i class="fas fa-download"></i> Export to KML</button></td>\
+                    </tr>\
                     <tr>\
                         <td colspan="2">' + (feature.properties['Name'] !== null ? autolinker.link(String(feature.properties['Name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
                     </tr>\
@@ -183,6 +317,9 @@
         map.addLayer(layer_TKO_FDU_2022_0);
         function pop_Sales_Schedule_FY26TKO_Sales_Schedule_FY26_1(feature, layer) {
             var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2"><button onclick="exportToKML(' + JSON.stringify(feature).replace(/"/g, '&quot;') + ', \'Sales_Schedule_FY26\')" style="background-color: #4CAF50; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 10px;"><i class="fas fa-download"></i> Export to KML</button></td>\
+                    </tr>\
                     <tr>\
                         <td colspan="2">' + (feature.properties['OBJECTID'] !== null ? autolinker.link(String(feature.properties['OBJECTID']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
                     </tr>\
@@ -396,7 +533,7 @@
                 weight: 1.0, 
                 fill: true,
                 fillOpacity: 1,
-                fillColor: 'rgba(48,18,59,0.9)',
+                fillColor: 'rgba(48,18,59,1.0)',
                 interactive: true,
             }
                     break;
@@ -411,7 +548,7 @@
                 weight: 1.0, 
                 fill: true,
                 fillOpacity: 1,
-                fillColor: 'rgba(40,188,235,0.9)',
+                fillColor: 'rgba(40,188,235,1.0)',
                 interactive: true,
             }
                     break;
@@ -426,7 +563,7 @@
                 weight: 1.0, 
                 fill: true,
                 fillOpacity: 1,
-                fillColor: 'rgba(164,252,60,0.9)',
+                fillColor: 'rgba(164,252,60,1.0)',
                 interactive: true,
             }
                     break;
@@ -441,7 +578,7 @@
                 weight: 1.0, 
                 fill: true,
                 fillOpacity: 1,
-                fillColor: 'rgba(251,126,33,0.9)',
+                fillColor: 'rgba(251,126,33,1.0)',
                 interactive: true,
             }
                     break;
@@ -455,8 +592,8 @@
                 lineJoin: 'miter',
                 weight: 1.0, 
                 fill: true,
-                fillOpacity: 0.9,
-                fillColor: 'rgba(255,100,100,1.0)',
+                fillOpacity: 1,
+                fillColor: 'rgba(122,4,3,1.0)',
                 interactive: true,
             }
                     break;
@@ -479,12 +616,17 @@
         var overlaysTree = [
             {label: 'Sales_Schedule_FY26 — TKO_Sales_Schedule_FY26<br /><table><tr><td style="text-align: center;"></td><td></td></tr><tr><td style="text-align: center;"><img src="legend/Sales_Schedule_FY26TKO_Sales_Schedule_FY26_1_Arrow1.png" /></td><td>Arrow</td></tr><tr><td style="text-align: center;"><img src="legend/Sales_Schedule_FY26TKO_Sales_Schedule_FY26_1_Boundary2.png" /></td><td>Boundary</td></tr><tr><td style="text-align: center;"><img src="legend/Sales_Schedule_FY26TKO_Sales_Schedule_FY26_1_EastKootenay3.png" /></td><td>East Kootenay</td></tr><tr><td style="text-align: center;"><img src="legend/Sales_Schedule_FY26TKO_Sales_Schedule_FY26_1_KootenayLake4.png" /></td><td>Kootenay Lake</td></tr></table>', layer: layer_Sales_Schedule_FY26TKO_Sales_Schedule_FY26_1},
             {label: '<img src="legend/TKO_FDU_2022_0.png" /> TKO_FDU_2022', layer: layer_TKO_FDU_2022_0},
+            {label: 'BC Roads (Digital Road Atlas)', layer: bcRoadsLayer}
         ];
         // Add basemap to layer control tree
         var baseTree = [
-    		{label: "OpenStreetMap", layer: baseMap_OSM},
-    		{label: "Satellite", layer: baseMap_Satellite}
-	];
+            {label: "OpenStreetMap", layer: baseMap_OSM},
+            {label: "Satellite (ESRI)", layer: baseMap_Satellite},
+            {label: "Topographic (OpenTopo)", layer: baseMap_Terrain},
+            {label: "Light (CartoDB)", layer: baseMap_CartoDB},
+            {label: "Topographic (ESRI)", layer: baseMap_ESRI_Topo},
+            {label: "Terrain (Stamen)", layer: baseMap_Stamen_Terrain}
+        ];
         var lay = L.control.layers.tree(baseTree, overlaysTree,{
             //namedToggle: true,
             //selectorBack: false,
@@ -515,7 +657,7 @@
                 feature: layer.feature,
                 variables: {}
             };
-            layer.bindTooltip((layer.feature.properties['BLOCK_FULL_NAME'] !== null?String('<div style="color: #323232; font-size: 7pt; font-family: \'Arial\', sans-serif;">' + layer.feature.properties['BLOCK_FULL_NAME']) + '</div>':''), {permanent: true, offset: [-0, 0], className: 'css_Sales_Schedule_FY26TKO_Sales_Schedule_FY26_1'});
+            layer.bindTooltip((layer.feature.properties['BLOCK_FULL_NAME'] !== null?String('<div style="color: #323232; font-size: 7pt; font-family: \'Arial\', sans-serif;">' + layer.feature.properties['BLOCK_FULL_NAME']) + '</div>':''), {permanent: true, offset: [-0, -16], className: 'css_Sales_Schedule_FY26TKO_Sales_Schedule_FY26_1'});
             labels.push(layer);
             totalMarkers += 1;
               layer.added = true;
@@ -542,3 +684,4 @@
         </script>
     </body>
 </html>
+
